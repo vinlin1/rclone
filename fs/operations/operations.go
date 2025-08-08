@@ -854,11 +854,35 @@ func CountStringField(count int64, humanReadable bool, rawWidth int) string {
 //
 // Shows size and path - obeys includes and excludes.
 //
+// 修改代码：增加ls命令的结果中，增加一个行序号
+// 使用"sync/atomic"实现
+// by ##sujian## 2025-8-7
+
+// 增加了每10行就输出一个表头的功能。
+type AtomicCounter struct {
+	val int64
+}
+
+func (c *AtomicCounter) LineIndex() string {
+	return strconv.FormatInt(atomic.AddInt64(&c.val, 1), 10)
+}
+
 // Lists in parallel which may get them out of order
 func List(ctx context.Context, f fs.Fs, w io.Writer) error {
+	var counter AtomicCounter
 	ci := fs.GetConfig(ctx)
+	// 打印表头的函数
+	printHeader := func() {
+		SyncFprintf(w, "%-6s %-10s %s\n", "序号", "大小", "名称")
+	}
+	printHeader() // 首次先输出一次表头
+
 	return ListFn(ctx, f, func(o fs.Object) {
-		SyncFprintf(w, "%s %s\n", SizeStringField(o.Size(), ci.HumanReadable, 9), o.Remote())
+		index := atomic.AddInt64(&counter.val, 1)
+		if (index-1)%100 == 0 && index != 1 {
+			printHeader()
+		}
+		SyncFprintf(w, "%-6s %-s %-s\n", counter.LineIndex(), SizeStringField(o.Size(), ci.HumanReadable, 9), o.Remote())
 	})
 }
 
